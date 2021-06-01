@@ -1,0 +1,53 @@
+version: '3'                                                                                                                                                                                                
+services:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+        consul:
+            image: consul:1.10.0-beta3
+            command: ["consul","agent","-config-file=/config/consul-single-dc.hcl","-config-dir=/config"]
+            volumes:
+            - "./consul_config:/config"
+            ports:
+            - 8500:8500
+            networks:
+                vpcbr:
+                    ipv4_address: 10.5.0.2
+
+        central_proxy:
+            build: .
+            ports:
+            - 8001:8001
+            environment:
+                CONSUL_HTTP_ADDR: 10.5.0.2:8500
+                CONSUL_GRPC_ADDR: 10.5.0.2:8502
+                CENTRAL_CONFIG: "/central_config/web-defaults.hcl;/central_config/ingress.hcl"
+            volumes:
+            - "./central_config:/central_config"
+            command: ["consul", "connect", "envoy","-gateway=ingress", "-register","-service=ingress-service", '-bind-address', "sample=0.0.0.0:8001", "-address", '{{ GetInterfaceIP "eth0" }}:8001']
+            networks:
+                vpcbr:
+                    ipv4_address: 10.5.0.9
+
+        web:
+            image: nginx
+            ports:
+            - 80:80                                                                                                                                                                                                                                                                                                                   
+            networks:
+                vpcbr:
+                    ipv4_address: 10.5.0.10
+        web_proxy:
+            build: .
+            environment:
+                CONSUL_HTTP_ADDR: 10.5.0.2:8500
+                CONSUL_GRPC_ADDR: 10.5.0.2:8502
+                SERVICE_CONFIG: /config/web_v1.hcl
+            volumes:
+            - "./service_config:/config"
+            command: ["consul", "connect", "envoy","-sidecar-for", "web-v1"]
+            network_mode: "service:web"
+networks:
+   vpcbr:
+     driver: bridge
+     ipam:
+      config:
+        - subnet: 10.5.0.0/16                                                                                                                                                                                                                                                                                                                                                           
+volumes:                                                                                                                                                                                                    
+  postgresdata:
